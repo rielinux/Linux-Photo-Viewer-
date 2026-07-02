@@ -24,3 +24,33 @@ Simply run the Python script
 ```bash
 python3 photo_viewer.py
 ```
+## Set as Default Image Viewer (e.g., Kali Linux)
+To set this application as your default image viewer (so double-clicking opens images here):
+
+1. Make sure the script is in a permanent location, e.g., /home/your_path/PhotoViewer/photo_viewer.py.
+2. Create a desktop entry file:
+```
+mkdir -p ~/.local/share/applications/
+cat << 'EOF' > ~/.local/share/applications/photo-viewer.desktop
+[Desktop Entry]
+Type=Application
+Name=Windows Photo Viewer (Linux)
+Comment=View your photos with Windows style
+Exec=python3 /home/rie/PhotoViewer/photo_viewer.py %f
+Icon=image-viewer
+Terminal=false
+Categories=Graphics;RasterGraphics;Viewer;
+MimeType=image/png;image/jpeg;image/gif;image/bmp;image/webp;
+EOF
+```
+3. Update the execution permissions and refresh the desktop database:
+
+```
+chmod +x ~/.local/share/applications/photo-viewer.desktop
+update-desktop-database ~/.local/share/applications/
+```
+4. Register it as the default association for major image formats:
+```
+xdg-mime default photo-viewer.desktop image/png image/jpeg image/gif image/bmp image/webp
+```
+
