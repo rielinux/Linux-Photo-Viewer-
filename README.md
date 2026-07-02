@@ -1,3 +1,8 @@
+
+<img width="1366" height="768" alt="Screenshot_2026-07-02_21_31_10" src="https://github.com/user-attachments/assets/584fc3a0-273a-4f80-86f6-7014a505296e" />
+
+
+
 # Windows Photo Viewer Clone for Linux
 
 A lightweight, Python-based desktop photo viewer for Linux (specifically optimized for Kali Linux and Debian/XFCE environments) designed to replicate the classic Windows Photo Viewer experience.
