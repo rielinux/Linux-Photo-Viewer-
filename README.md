@@ -17,3 +17,44 @@ You only need Python 3 and PyQt5:
 ```bash
 sudo apt update
 sudo apt install python3-pyqt5 -y
+
+How to Run Locally
+
+Simply run the Python script:
+code Bash
+
+python3 photo_viewer.py
+
+Set as Default Image Viewer (e.g., Kali Linux)
+
+To set this application as your default image viewer (so double-clicking opens images here):
+
+    Make sure the script is in a permanent location, e.g., /home/rie/PhotoViewer/photo_viewer.py.
+
+    Create a desktop entry file:
+    code Bash
+
+mkdir -p ~/.local/share/applications/
+cat << 'EOF' > ~/.local/share/applications/photo-viewer.desktop
+[Desktop Entry]
+Type=Application
+Name=Windows Photo Viewer (Linux)
+Comment=View your photos with Windows style
+Exec=python3 /home/rie/PhotoViewer/photo_viewer.py %f
+Icon=image-viewer
+Terminal=false
+Categories=Graphics;RasterGraphics;Viewer;
+MimeType=image/png;image/jpeg;image/gif;image/bmp;image/webp;
+EOF
+
+Update the execution permissions and refresh the desktop database:
+code Bash
+
+chmod +x ~/.local/share/applications/photo-viewer.desktop
+update-desktop-database ~/.local/share/applications/
+
+Register it as the default association for major image formats:
+code Bash
+
+xdg-mime default photo-viewer.desktop image/png image/jpeg image/gif image/bmp image/webp
+
