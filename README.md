@@ -18,7 +18,8 @@ You only need Python 3 and PyQt5:
 sudo apt update
 sudo apt install python3-pyqt5 -y
 
-Markdown
+
 ## How to Run Locally
 Simply run the Python script
+```bash
 python3 photo_viewer.py
