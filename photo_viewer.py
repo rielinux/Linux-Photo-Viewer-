@@ -5,8 +5,9 @@ import subprocess
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QPushButton, QFileDialog, 
                              QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
-                             QMenu, QAction, QMessageBox, QFrame, QToolButton)
-from PyQt5.QtCore import Qt, QUrl, QSize, QPoint
+                             QMenu, QAction, QMessageBox, QFrame, QToolButton,
+                             QRubberBand)
+from PyQt5.QtCore import Qt, QUrl, QSize, QPoint, QRect
 from PyQt5.QtGui import QPixmap, QPainter, QDesktopServices, QIcon, QPen, QColor, QBrush, QPolygon
 
 # Deteksi dukungan cetak Linux secara aman
@@ -123,6 +124,18 @@ def create_drawn_icon(name, color_hex="#555555", size=32):
         painter.setPen(pen)
         painter.drawLine(int(30*s), int(30*s), int(70*s), int(70*s))
         painter.drawLine(int(70*s), int(30*s), int(30*s), int(70*s))
+
+    elif name == "crop":
+        # Ikon Crop (Dua sudut siku-siku saling tumpang tindih)
+        painter.drawRect(int(32*s), int(32*s), int(42*s), int(42*s))
+        # Garis horizontal kiri atas menjulur ke luar
+        painter.drawLine(int(15*s), int(32*s), int(32*s), int(32*s))
+        # Garis vertikal kiri atas menjulur ke luar
+        painter.drawLine(int(32*s), int(15*s), int(32*s), int(32*s))
+        # Garis horizontal kanan bawah menjulur ke luar
+        painter.drawLine(int(74*s), int(74*s), int(85*s), int(74*s))
+        # Garis vertikal kanan bawah menjulur ke luar
+        painter.drawLine(int(74*s), int(74*s), int(74*s), int(85*s))
         
     painter.end()
     return QIcon(pixmap)
@@ -139,13 +152,17 @@ class ZoomableGraphicsView(QGraphicsView):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setStyleSheet("background-color: #eef3fa; border: none;")
         
-        # PERBAIKAN: Mengaktifkan mode seret genggam (drag-to-pan) bawaan Qt
-        # untuk mempermudah penyeretan gambar dengan menahan tombol kiri mouse
+        # Mengaktifkan mode seret genggam (drag-to-pan) bawaan Qt
         self.setDragMode(QGraphicsView.ScrollHandDrag)
         
         self.scene = QGraphicsScene(self)
         self.setScene(self.scene)
         self.pixmap_item = None
+
+        # Variabel pendukung cropping
+        self.crop_mode = False
+        self.rubber_band = None
+        self.origin = QPoint()
 
     def setImage(self, pixmap):
         self.scene.clear()
@@ -156,8 +173,72 @@ class ZoomableGraphicsView(QGraphicsView):
         self.setSceneRect(self.pixmap_item.boundingRect())
         self.fitInView(self.sceneRect(), Qt.KeepAspectRatio)
 
+    def set_crop_mode(self, enabled):
+        """Mengatur mode pemotongan gambar."""
+        self.crop_mode = enabled
+        if enabled:
+            # Matikan fungsi geser (pan) saat sedang menggambar seleksi crop
+            self.setDragMode(QGraphicsView.NoDrag)
+            self.setCursor(Qt.CrossCursor)
+        else:
+            self.setDragMode(QGraphicsView.ScrollHandDrag)
+            self.setCursor(Qt.ArrowCursor)
+            if self.rubber_band:
+                self.rubber_band.hide()
+
+    def mousePressEvent(self, event):
+        if self.crop_mode and event.button() == Qt.LeftButton:
+            self.origin = event.pos()
+            if not self.rubber_band:
+                self.rubber_band = QRubberBand(QRubberBand.Rectangle, self)
+            self.rubber_band.setGeometry(QRect(self.origin, QSize()))
+            self.rubber_band.show()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.crop_mode and self.rubber_band and (event.buttons() & Qt.LeftButton):
+            self.rubber_band.setGeometry(QRect(self.origin, event.pos()).normalized())
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self.crop_mode and self.rubber_band and event.button() == Qt.LeftButton:
+            rect = self.rubber_band.geometry()
+            self.rubber_band.hide()
+            
+            # Berikan waktu jeda sebentar agar visual rubber band menghilang
+            if rect.width() > 10 and rect.height() > 10:
+                parent_window = self.window()
+                if hasattr(parent_window, "confirm_crop"):
+                    parent_window.confirm_crop(rect)
+        else:
+            super().mouseReleaseEvent(event)
+
+    def get_cropped_pixmap(self, view_rect):
+        """Memotong QPixmap asli berdasarkan area koordinat view."""
+        if not self.pixmap_item:
+            return None
+
+        # Konversi koordinat tampilan (view) ke koordinat scene
+        scene_polygon = self.mapToScene(view_rect)
+        scene_rect = scene_polygon.boundingRect()
+
+        # Konversi koordinat scene ke koordinat lokal elemen gambar (pixmap_item)
+        local_rect = self.pixmap_item.mapFromScene(scene_rect).boundingRect()
+
+        original_pixmap = self.pixmap_item.pixmap()
+        pixmap_rect = original_pixmap.rect()
+
+        # Batasi area crop agar tidak keluar dari dimensi asli gambar
+        final_rect = local_rect.toRect().intersected(pixmap_rect)
+
+        if final_rect.isEmpty() or final_rect.width() < 5 or final_rect.height() < 5:
+            return None
+
+        return original_pixmap.copy(final_rect)
+
     def wheelEvent(self, event):
-        # Requirement 4: Zoom dengan scroll roda mouse
         zoom_factor = 1.15
         if event.angleDelta().y() < 0:
             zoom_factor = 1.0 / zoom_factor
@@ -245,6 +326,12 @@ class PhotoViewerApp(QMainWindow):
         btn_email.setIconSize(QSize(16, 16))
         btn_email.clicked.connect(self.send_email)
 
+        # Tombol Crop Baru & Ikon custom
+        self.btn_crop = QPushButton(" Crop")
+        self.btn_crop.setIcon(create_drawn_icon("crop", "#555555"))
+        self.btn_crop.setIconSize(QSize(16, 16))
+        self.btn_crop.clicked.connect(self.toggle_crop_mode)
+
         # Tombol Open (Requirement 6) & Ikon custom
         btn_open = QToolButton()
         btn_open.setText(" Open ▼")
@@ -280,6 +367,7 @@ class PhotoViewerApp(QMainWindow):
         top_layout.addWidget(btn_file)
         top_layout.addWidget(btn_print)
         top_layout.addWidget(btn_email)
+        top_layout.addWidget(self.btn_crop) # Ditambahkan ke layout top bar
         top_layout.addWidget(btn_open)
         top_layout.addStretch()
         main_layout.addWidget(self.top_bar)
@@ -508,8 +596,76 @@ class PhotoViewerApp(QMainWindow):
         self.top_bar.show()
         self.bottom_bar_container.show()
 
+    def toggle_crop_mode(self):
+        """Mengaktifkan/menonaktifkan mode pemotongan foto."""
+        if not self.current_image_path:
+            QMessageBox.warning(self, "Peringatan", "Buka foto terlebih dahulu sebelum dipotong.")
+            return
+
+        is_active = not self.view.crop_mode
+        self.view.set_crop_mode(is_active)
+
+        if is_active:
+            self.btn_crop.setText(" Cancel Crop")
+            self.btn_crop.setStyleSheet("background-color: #fce4ec; color: #c2185b; font-weight: bold; border-radius: 2px;")
+            QMessageBox.information(
+                self, 
+                "Mode Crop Aktif", 
+                "Tarik klik kiri mouse pada gambar untuk memilih area yang ingin dipotong."
+            )
+        else:
+            self.btn_crop.setText(" Crop")
+            self.btn_crop.setStyleSheet("")
+
+    def confirm_crop(self, rect):
+        """Memproses hasil pemotongan gambar."""
+        cropped_pixmap = self.view.get_cropped_pixmap(rect)
+        if cropped_pixmap is None or cropped_pixmap.isNull():
+            QMessageBox.warning(self, "Peringatan", "Gagal mengambil seleksi potongan foto.")
+            return
+
+        # Matikan mode crop dan kembalikan visual tombol ke semula
+        self.view.set_crop_mode(False)
+        self.btn_crop.setText(" Crop")
+        self.btn_crop.setStyleSheet("")
+
+        # Dialog Konfirmasi Penyimpanan
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Simpan Hasil Potongan")
+        msg_box.setText("Apakah Anda ingin memotong foto ke area seleksi ini?")
+        btn_overwrite = msg_box.addButton("Simpan & Timpa", QMessageBox.YesRole)
+        btn_save_as = msg_box.addButton("Simpan Sebagai...", QMessageBox.NoRole)
+        btn_cancel = msg_box.addButton("Batal", QMessageBox.RejectRole)
+
+        msg_box.exec_()
+
+        if msg_box.clickedButton() == btn_overwrite:
+            try:
+                success = cropped_pixmap.save(self.current_image_path)
+                if success:
+                    self.load_image(self.current_image_path)
+                    QMessageBox.information(self, "Sukses", "Foto berhasil dipotong dan disimpan.")
+                else:
+                    QMessageBox.critical(self, "Error", "Gagal menimpa berkas asli.")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Gagal menyimpan berkas:\n{str(e)}")
+
+        elif msg_box.clickedButton() == btn_save_as:
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "Simpan Foto Baru", self.current_image_path, "Images (*.png *.jpg *.jpeg *.bmp)"
+            )
+            if file_path:
+                try:
+                    success = cropped_pixmap.save(file_path)
+                    if success:
+                        self.load_image(file_path)
+                        QMessageBox.information(self, "Sukses", "Foto berhasil disimpan ke berkas baru.")
+                    else:
+                        QMessageBox.critical(self, "Error", "Gagal menyimpan berkas baru.")
+                except Exception as e:
+                    QMessageBox.critical(self, "Error", f"Gagal menyimpan berkas:\n{str(e)}")
+
     def keyPressEvent(self, event):
-        # Requirement 5: Keluar fullscreen dengan ESC
         if event.key() == Qt.Key_Escape:
             if self.isFullScreen():
                 self.exit_fullscreen()
@@ -556,7 +712,6 @@ class PhotoViewerApp(QMainWindow):
             QDesktopServices.openUrl(url)
 
     def delete_photo(self):
-        # Requirement 3: Hapus berkas foto
         if not self.current_image_path:
             QMessageBox.warning(self, "Peringatan", "Tidak ada foto yang sedang dibuka.")
             return
