@@ -16,7 +16,7 @@ A lightweight, Python-based desktop photo viewer for Linux (specifically optimiz
 - **File Navigation**: Navigate through pictures in the same folder using the previous/next buttons or keyboard arrow keys (Left/Right).
 - **External Open**: "Open with" submenu to easily direct files to GIMP, Ristretto, Firefox, or System Default.
 - **Local Deletion**: Delete photo files directly from the app interface with a confirmation safety prompt.
-
+- **Crop Photo**: Crop Photo directly from the app interface with a confirmation safety prompt.
 ## Requirements
 You only need Python 3 and PyQt5:
 ```bash
